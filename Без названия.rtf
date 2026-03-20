@@ -1,0 +1,159 @@
+{\rtf1\ansi\ansicpg1251\cocoartf2868
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 HelveticaNeue;\f1\fnil\fcharset0 HelveticaNeue-Italic;}
+{\colortbl;\red255\green255\blue255;\red255\green255\blue255;\red82\green173\blue247;}
+{\*\expandedcolortbl;;\cspthree\c100000\c100000\c100000;\cspthree\c47284\c72889\c95518;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs26 \cf2 import telebot\
+from telebot import types\
+import yfinance as yf\
+import sqlite3\
+from datetime import datetime\
+\
+# \uc0\u1053 \u1054 \u1042 \u1067 \u1049  \u1058 \u1054 \u1050 \u1045 \u1053 \
+TOKEN = '8679092119:AAEiKtBSmy12SuuZWzLhdm4MRf70v280ZIU'\
+bot = telebot.TeleBot(TOKEN)\
+\
+user_settings = \{\}\
+last_prices = \{\}\
+\
+# \uc0\u1041 \u1072 \u1079 \u1072  \u1076 \u1072 \u1085 \u1085 \u1099 \u1093 \
+def init_db():\
+    conn = sqlite3.connect('stats.db')\
+    c = conn.cursor()\
+    c.execute('''CREATE TABLE IF NOT EXISTS trades\
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  user_id INTEGER,\
+                  pair TEXT,\
+                  direction TEXT,\
+                  entry_price REAL,\
+                  exit_price REAL,\
+                  result TEXT,\
+                  profit REAL,\
+                  date TIMESTAMP)''')\
+    c.execute('''CREATE TABLE IF NOT EXISTS stats\
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,\
+                  total_trades INTEGER DEFAULT 0,\
+                  wins INTEGER DEFAULT 0,\
+                  losses INTEGER DEFAULT 0,\
+                  profit REAL DEFAULT 0,\
+                  date TIMESTAMP)''')\
+    conn.commit()\
+    conn.close()\
+\
+init_db()\
+\
+def add_trade(user_id, pair, direction, entry, exit):\
+    conn = sqlite3.connect('stats.db')\
+    c = conn.cursor()\
+    \
+    if direction == 'UP':\
+        if exit > entry:\
+            result = 'WIN'\
+            profit = ((exit - entry) / entry) * 100\
+        else:\
+            result = 'LOSS'\
+            profit = -((entry - exit) / entry) * 100\
+    else:\
+        if exit < entry:\
+            result = 'WIN'\
+            profit = ((entry - exit) / entry) * 100\
+        else:\
+            result = 'LOSS'\
+            profit = -((exit - entry) / entry) * 100\
+    \
+    c.execute("INSERT INTO trades (user_id, pair, direction, entry_price, exit_price, result, profit, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",\
+              (user_id, pair, direction, entry, exit, result, profit, \cf3 datetime.now\cf2 ()))\
+    \
+    c.execute("SELECT * FROM stats WHERE id=1")\
+    stats = c.fetchone()\
+    \
+    if stats:\
+        total = stats[1] + 1\
+        wins = stats[2] + (1 if result == 'WIN' else 0)\
+        losses = stats[3] + (1 if result == 'LOSS' else 0)\
+        total_profit = stats[4] + profit\
+        c.execute("UPDATE stats SET total_trades=?, wins=?, losses=?, profit=?, date=? WHERE id=1",\
+                  (total, wins, losses, total_profit, \cf3 datetime.now\cf2 ()))\
+    else:\
+        c.execute("INSERT INTO stats (id, total_trades, wins, losses, profit, date) VALUES (1, 1, ?, ?, ?, ?)",\
+                  (1 if result == 'WIN' else 0, 1 if result == 'LOSS' else 0, profit, \cf3 datetime.now\cf2 ()))\
+    \
+    conn.commit()\
+    conn.close()\
+    return result, profit\
+\
+def get_stats():\
+    conn = sqlite3.connect('stats.db')\
+    c = conn.cursor()\
+    c.execute("SELECT * FROM stats WHERE id=1")\
+    stats = c.fetchone()\
+    conn.close()\
+    \
+    if stats:\
+        total = stats[1]\
+        wins = stats[2]\
+        losses = stats[3]\
+        profit = stats[4]\
+        win_rate = (wins / total * 100) if total > 0 else 0\
+        return \{'total': total, 'wins': wins, 'losses': losses, 'profit': profit, 'win_rate': win_rate\}\
+    return \{'total': 0, 'wins': 0, 'losses': 0, 'profit': 0, 'win_rate': 0\}\
+\
+# \uc0\u1050 \u1053 \u1054 \u1055 \u1050 \u1048 \
+markup = types.ReplyKeyboardMarkup(resize_keyboard=True)\
+markup.add(types.KeyboardButton('\uc0\u55357 \u56522  \u1057 \u1048 \u1043 \u1053 \u1040 \u1051 '))\
+\
+@bot.message_handler(commands=['start'])\
+def start(message):\
+    bot.send_message(\cf3 message.chat.id\cf2 , "\uc0\u55357 \u56960  \u1041 \u1086 \u1090  \u1079 \u1072 \u1087 \u1091 \u1097 \u1077 \u1085 !\\n\\n/stats - \u1089 \u1090 \u1072 \u1090 \u1080 \u1089 \u1090 \u1080 \u1082 \u1072 \\n/table - \u1090 \u1072 \u1073 \u1083 \u1080 \u1094 \u1072 ", reply_markup=markup)\
+\
+@bot.message_handler(func=lambda message: message.text == '\uc0\u55357 \u56522  \u1057 \u1048 \u1043 \u1053 \u1040 \u1051 ')\
+def get_signal(message):\
+    user_id = message.from_user.id\
+    msg = bot.send_message(\cf3 message.chat.id\cf2 , "\uc0\u55357 \u56522  \u1055 \u1086 \u1083 \u1091 \u1095 \u1072 \u1102  \u1076 \u1072 \u1085 \u1085 \u1099 \u1077 ...")\
+    \
+    try:\
+        ticker = yf.Ticker("EURUSD=X")\
+        data = ticker.history(period='1d', interval='1m')\
+        \
+        if not data.empty:\
+            current = data['Close'].iloc[-1]\
+            prev = data['Close'].iloc[-2] if len(data) > 1 else current\
+            \
+            if current > prev:\
+                direction = '\uc0\u55357 \u56520  UP'\
+            elif current < prev:\
+                direction = '\uc0\u55357 \u56521  DOWN'\
+            else:direction = '\uc0\u9208 \u65039  NEUTRAL'\
+            \
+            if user_id in last_prices:\
+                add_trade(user_id, "EUR/USD", 'UP' if current > prev else 'DOWN', last_prices[user_id], current)\
+            \
+            last_prices[user_id] = current\
+            change = ((current - prev) / prev) * 100\
+            \
+            bot.edit_message_text(f"\uc0\u55356 \u57263  \u1057 \u1048 \u1043 \u1053 \u1040 \u1051 \\n\\nEUR/USD: \{current:.5f\}\\n\u1048 \u1079 \u1084 : \{change:+.2f\}%\\n\\n\{direction\}", \cf3 message.chat.id\cf2 , msg.message_id)\
+        else:\
+            bot.edit_message_text("\uc0\u10060  \u1053 \u1077 \u1090  \u1076 \u1072 \u1085 \u1085 \u1099 \u1093 ", \cf3 message.chat.id\cf2 , msg.message_id)\
+    except Exception as e:\
+        bot.edit_message_text(f"\uc0\u10060  \u1054 \u1096 \u1080 \u1073 \u1082 \u1072 : \{e\}", \cf3 message.chat.id\cf2 , msg.message_id)\
+\
+@bot.message_handler(commands=['stats'])\
+def show_stats(message):\
+    stats = get_stats()\
+    text = f"\uc0\u55357 \u56522  \u1057 \u1058 \u1040 \u1058 \u1048 \u1057 \u1058 \u1048 \u1050 \u1040 \\n\\n\u1042 \u1089 \u1077 \u1075 \u1086  \u1089 \u1076 \u1077 \u1083 \u1086 \u1082 : \{stats['total']\}\\n\u9989  \u1042 \u1099 \u1080 \u1075 \u1088 \u1099 \u1096 \u1077 \u1081 : \{stats['wins']\}\\n\u10060  \u1055 \u1088 \u1086 \u1080 \u1075 \u1088 \u1099 \u1096 \u1077 \u1081 : \{stats['losses']\}\\n\u55356 \u57263  WIN RATE: \{stats['win_rate']:.1f\}%"\
+    bot.send_message(\cf3 message.chat.id\cf2 , text)\
+\
+@bot.message_handler(commands=['table'])\
+def show_table(message):\
+    stats = get_stats()\
+    text = f"\uc0\u55357 \u56522  WIN RATE: \{stats['win_rate']:.1f\}%\\n\u55357 \u56496  \u1055 \u1088 \u1080 \u1073 \u1099 \u1083 \u1100 : \{stats['profit']:+.2f\}%"\
+    bot.send_message(\cf3 message.chat.id\cf2 , text)\
+\
+if
+\f1\i  __name__ 
+\f0\i0 == '__main__':\
+    print("\uc0\u55357 \u56960  \u1041 \u1054 \u1058  \u1047 \u1040 \u1055 \u1059 \u1065 \u1045 \u1053 !")\
+    print(f"\uc0\u55358 \u56598  \cf3 @trade_bot_new_bot\cf2 ")\
+    bot.infinity_polling()}
